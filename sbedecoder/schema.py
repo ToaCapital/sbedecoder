@@ -1,5 +1,5 @@
 import re
-import six
+
 from lxml import etree
 from sbedecoder.message import SBEMessage, TypeMessageField, EnumMessageField, SetMessageField, CompositeMessageField, \
     SBERepeatingGroupContainer
@@ -58,9 +58,11 @@ class SBESchema(object):
         children_types = []
         for child in type_definition.getchildren():
             child_configuration = dict((convert_to_underscore(x[0]), x[1]) for x in child.items())
-            child_configuration['type'] = child.tag
+            if 'type' not in child_configuration:
+                child_configuration['type'] = child.tag
             if child.text:
                 child_configuration['text'] = child.text.strip()
+
             children_types.append(child_configuration)
         type_configuration['children'] = children_types
         return type_configuration
@@ -236,8 +238,24 @@ class SBESchema(object):
             float_composite = False
             field_length = 0
             for child in field_type['children']:
-                primitive_type_fmt, primitive_type_size = self.primitive_type_map[child['primitive_type']]
-                unpack_fmt = endian + primitive_type_fmt
+
+                is_string_type = False
+
+                if 'primitive_type' in child:
+                    is_string_type = child['primitive_type'] == 'char' and 'length' in child and int(
+                        child['length']) > 1
+                    encoded_type = self.primitive_type_map[child['primitive_type']]
+                elif 'encoding_type' in child:
+                    encoded_type = self.primitive_type_map[child['encoding_type']]
+
+                primitive_type_fmt, primitive_type_size = encoded_type
+
+                if is_string_type:
+                    string_length = int(child['length'])
+                    unpack_fmt = '%ds' % string_length  # unpack as string (which may be null-terminated if shorter)
+                    primitive_type_size = string_length
+                else:
+                    unpack_fmt = endian + primitive_type_fmt
                 child_since_version = int(child.get('since_version', '0'))
 
                 constant = None
@@ -264,6 +282,7 @@ class SBESchema(object):
                                                    description=child.get('description', ''),
                                                    unpack_fmt=unpack_fmt, field_offset=field_offset,
                                                    field_length=primitive_type_size,
+                                                   is_string_type=is_string_type,
                                                    null_value=null_value, constant=constant,
                                                    optional=optional, semantic_type=field_semantic_type,
                                                    since_version=child_since_version)
@@ -287,11 +306,16 @@ class SBESchema(object):
         if field_type in self.primitive_type_map:
             return self.primitive_type_map[field_type][1] #second value is byte size
         else:
-            field_def = self.type_map[field['type']]
+            if 'encoding_type' in field and field['encoding_type'] in self.primitive_type_map:
+                return self.primitive_type_map[field['encoding_type']][1]
+            if field_type == 'ref':
+                field_def = self.type_map[field['type']]
+            else:
+                field_def = self.type_map[field['type']]
             if 'encoding_type' in field_def and field_def['encoding_type'] in self.primitive_type_map:
                 return self.primitive_type_map[field_def['encoding_type']][1]
 
-            #otherwise it's a regular composite field
+            # otherwise it's a regular composite field
             block_length = 0
             for child_field in field_def['children']:
                 block_length += self._determine_field_length(child_field)
@@ -360,8 +384,11 @@ class SBESchema(object):
         for group_type in entity.get('groups', []):
             group_name = convert_to_underscore(group_type['name'])
             group_original_name = group_type['name']
-            group_since_version = int(group_type.get('since_version','0'))
-            dimension_type = self.type_map[group_type['dimension_type']]
+            group_since_version = int(group_type.get('since_version', '0'))
+            if 'dimension_type' in group_type:
+                dimension_type = self.type_map[group_type['dimension_type']]
+            else:
+                dimension_type = self.type_map['groupSizeEncoding']
             # There are two fields we care about, block_length and num_in_group
             block_length_field = None
             num_in_group_field = None

@@ -120,3 +120,5 @@ crashlytics.properties
 *.pcap
 *.erf
 *.gz
+
+.python-version

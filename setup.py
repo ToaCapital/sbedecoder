@@ -1,5 +1,6 @@
-from setuptools import setup
 from os import path
+
+from setuptools import setup
 
 here = path.abspath(path.dirname(__file__))
 
@@ -9,7 +10,7 @@ with open(path.join(here, 'README.md')) as f:
 
 setup(
     name="sbedecoder",
-    version="0.1.8",
+    version="0.1.11",
     author="TradeForecaster Global Markets, LLC",
     author_email="github@tradeforecaster.com",
     description="Simple Binary Encoding (SBE) decoder (handles CME MDP3 messages)",
